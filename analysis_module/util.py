@@ -68,11 +68,43 @@ def retinotopy_param(acquisition, stimorder):
 
     return stim_detail, color_dict, style_dict, alpha_dict, marker_dict
 
-# 6x4 stimulus parameters and graphic styles
+# 8 way stimulus parameters and graphic styles
 def gratings_param(acquisition, stimorder):
     ''' Load stimulus parameters and set graphic styles for plotting
+
     '''
-    return 
+    print('Current stimulus type: 8 ways grating stimulus, total numbers of stimulus: 17')
+
+    orient=acquisition['orient']
+    orient=np.append(orient, np.nan)
+    # the last stimulus for this type of stimulus session is a full field flash, so append nan for orientation
+    
+    freq=acquisition['freq']
+    freq=np.append(freq, np.nan)
+    # the last stimulus for this type of stimulus session is a full field flash, so append nan for spatial frequency
+
+    d= {'stim_id': np.unique(stimorder), 'orientation':orient, 'spatial_frequency':freq}
+    stim_detail= pd.DataFrame(d)
+
+    # create velocity vectors - reduces the orientation dimension but adds a third dimension
+    direction_dict= {'orientation': [0, 45,90,135,180,225,270,315],
+                    'direction_x': [1,1,0,-1,-1,-1,0,1,],
+                    'direction_y': [0,1,1,1,0,-1,-1,-1]
+                    }
+    direction_pd= pd.DataFrame(data=direction_dict) 
+    stim_detail= pd.merge(stim_detail, direction_pd, on='orientation', how='left') # merge data frame 
+
+    cmap=cm['Accent'].colors
+
+    color_dict= np.repeat(cmap,2,axis=0)
+    color_dict=np.append(color_dict,[[0.1,0.1,0.1]], axis=0)
+    # assign colors to stimulus- stimulus with same orientation gets same color, black as full field flash
+
+    style_dict= ['dashed','dotted','dashed','dotted','dashed','dotted','dashed','dotted','dashed','dotted','dashed','dotted','dashed',
+                 'dotted','dashed','dotted','solid']
+    # assign line style as indications of spacial frequency- dashed correspond to sf= 0.01, dotted sf=0.16, solid line as full field flash
+
+    return stim_detail, color_dict, style_dict
 
 # define useful functions for data-preparation and plotting
 
@@ -150,7 +182,7 @@ def plot_bar_appearance(cluster_df, col='',axs=None, cmap=cm['Accent'].colors):
     # generate some sort of representation for these stimulus
     center = [5, 3]
     L = np.array([-5, 5]) # length of line
-    temp=this_clusterpd.groupby(by='orientation').sum().reset_index() # sum up weights that belong to the same orientation regardless of spatial frequency
+    temp=cluster_df.groupby(by='orientation').sum().reset_index() # sum up weights that belong to the same orientation regardless of spatial frequency
     #cmap=cm['Accent'].colors
 
     for i in range(0, len(temp)):
@@ -168,7 +200,7 @@ def plot_direction(cluster_df,col='',axs=None, cmap=cm['Accent'].colors):
     Plot what the motion direction like for each stimulus that is important to the roi
     need to specify which column to use (ie. care_sig_inc_weight) and to plot on which axs
     '''    
-    temp=this_clusterpd.groupby(by='orientation').sum().reset_index() # sum up weights that belong to the same orientation regardless of spatial frequency
+    temp=cluster_df.groupby(by='orientation').sum().reset_index() # sum up weights that belong to the same orientation regardless of spatial frequency
     #cmap=cm['Accent'].colors
     for i in range(0, len(temp)):
         
