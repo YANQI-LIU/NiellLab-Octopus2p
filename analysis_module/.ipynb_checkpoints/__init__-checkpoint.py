@@ -17,6 +17,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster 
+
+from tqdm import tqdm
+import seaborn as sns
+
 
 def get_sbx(file_name):
 
@@ -174,8 +179,10 @@ def plot_s2proi(cellstat,iscell, ops):
 
     ''' plots all roi on the mean image colorcoded based on their is_cell probability, and plot roi with prob intervals on mean image
     for setting a threshold to include in the subsequent analysis
+    Return the two figures produced for saving in pdf
     '''
-    # plot all roi 
+
+        # plot all roi 
     center_row= []
     center_col = []
     prob_cell=iscell.T[1]
@@ -191,7 +198,7 @@ def plot_s2proi(cellstat,iscell, ops):
     plt.colorbar()
 
     # plot roi based on their probability intervals
-    fig, axs = plt.subplots(3,3,figsize=(12,12))
+    fig2, axs = plt.subplots(3,3,figsize=(12,12))
     axs=np.ravel(axs)
     
     for count,i in enumerate(np.arange(0.1,1,0.1)):
@@ -212,7 +219,7 @@ def plot_s2proi(cellstat,iscell, ops):
     
     axs = np.reshape(axs, (3,3))
     plt.subplots_adjust(hspace= 0.1,wspace= 0.1)
-    return
+    return fig, fig2
 
 def norm_fluorescence(F, selected_index):
     ''' Median filter each roi fluorescent trace followed by normalizing (by median, to control for dye loading variations)
@@ -237,8 +244,156 @@ def norm_fluorescence(F, selected_index):
     # remove traces that was divided by zero
 
     print(f'excluding weird fluorescent traces that have nans as median, the remaining good traces are {celldff.shape[0]}')
-
-    return celldff
     
+    #here we also store celldff1 for later use to exclude rois with median values=0 
+    return celldff, celldff1
 
+def reorganize_dff(celldff, cycwindow, nstim, nstimrep, stim_pd, offset, baseRange):
+    ''' organize traces for each roi in to each cycle for each stimulusid and for each repetition,
+    then subtract baseline mean from each trace
+    '''
 
+    reorganized_trace= np.zeros((celldff.shape[0],cycwindow-1, nstim, np.max(nstimrep)))+np.nan
+    # create storage to store mean images at a given stimulus at a given repetition
+    print(f'cell dff trace array reorganized to {reorganized_trace.shape}, with ncells, cycwindow-1, stim_id, max repetition')
+
+    # extract evoked responses based on pre-defined periods
+    for count, element in enumerate(tqdm(np.unique(stim_pd['stim_id']))):
+        for j in range(0, nstimrep[count]):
+            # or np.arange(0, int(reps)) when not all stim id is repeated the same time (ie some have 1 less)- NEED TO THINK ABOUT THIS
+            
+            this_pd= stim_pd[(stim_pd['stim_id']==element) & (stim_pd['stim_rep']==j)]
+            this_trace= celldff[:, this_pd['stim_start'].values[0]+offset : this_pd['stim_end'].values[0]+ offset]
+            # grab relevant frames for a given stimulus at a given repetition
+
+            this_baseline= np.nanmean(this_trace[:, baseRange], axis=1)
+
+            trace_evoked= this_trace - this_baseline[:,np.newaxis]
+            # calculate evoked image by using evoked frame ranges and baseline frame ranges, then mean this these frames
+            
+            reorganized_trace[:,:,count,j]= trace_evoked
+            # store into storage
+            
+    return reorganized_trace
+
+def plot_avgtrace(reorganized_trace, color_dict, style_dict,alpha_dict):
+
+    avg_stim_trace= np.nanmean(reorganized_trace, axis= 3)
+    # trace for each stimulus- averaged across all repititions
+
+    fig=plt.figure()
+
+    for i in np.arange(0,avg_stim_trace.shape[2]):
+        plt.plot(np.mean(avg_stim_trace[:,:,i], axis=0), label=f'stimulus # {i}',color= color_dict[i], linestyle= style_dict[i], alpha= alpha_dict[i])
+    plt.title('mean response across all rois for each stimulus')
+    plt.legend(loc='best',bbox_to_anchor=(1.1, 1.05))
+    plt.show()
+    return fig
+
+def find_responsive(trace, base_range,evo_range, nstim, tail='greater'):
+
+    ''' find rois that are significantly responsive to a certian stimuli (takes in acount for all repetitions for a given stimulus) 
+    inputs dfof trace that is rearranged as (ncells, cycwindow-1, stim_id, repitition), base frame range and evoked frame range, and tail ('greater' or 'less')
+    '''
+
+    response_matrix= np.zeros((trace.shape[0],trace.shape[2]))
+    # create empty array with shape (nroi, nstim)
+    
+    for i in tqdm(range(0,trace.shape[2])):
+    # loop over different stimulus
+    
+        for j in range(0,trace.shape[0]):
+        # loop over different rois
+            bl_measures= trace[j,base_range,i,:]
+            evo_measures= trace[j,evo_range,i,:]
+            ranksums= scipy.stats.ranksums (evo_measures.flatten(),bl_measures.flatten(), alternative=tail)
+    
+        # record wether this roi during evoked response period is significantly greater than during baseline period determined by the ranksums test
+            if ranksums.pvalue <(0.05/nstim): # Bonferroni correction to control for multiple comparisons
+            #if compare large enough numbers of features then there is morelikely that something will appear difference by chance
+                response_matrix[j,i]=1 # assign those fall below p value as 1
+        else:
+            pass
+    
+    return response_matrix
+
+def response_cluster(cluster_input_responsive):
+    ''' hierarchical clustering based on response from statistial test
+    '''
+
+    Z = linkage(cluster_input_responsive, 'ward')
+    plt.figure(1)
+    plt.subplots(figsize=(15, 5))
+    dn = dendrogram(Z)
+    plt.show()
+
+    
+    sns_figure=sns.clustermap(
+    cluster_input_responsive,
+    figsize=(5,5),
+    method='ward',
+    row_cluster=True,
+    col_cluster=False,
+    cmap='viridis')
+    plt.title('whether each unit is significant to a stimulus or not')
+    plt.show()
+
+    return Z, sns_figure.figure
+
+def response_cluster_sn(ndarray):
+    ''' hierarchical clustering based on response from statistial test
+    '''
+
+    Z = linkage(ndarray, 'ward')
+    plt.figure(1)
+    plt.subplots(figsize=(15, 5))
+    dn = dendrogram(Z)
+    plt.show()
+
+    
+    sns_figure=sns.clustermap(
+    ndarray,
+    figsize=(5,5),
+    method='ward',
+    row_cluster=True,
+    col_cluster=False,
+    cmap='viridis',
+    vmin = 0,
+    vmax= 0.5)
+    plt.title('mean dff during taurange in each frame for each roi')
+    plt.show()
+
+    return Z, sns_figure.figure
+
+def define_cluster(Z):
+    t= float( input('Input cut off level based on dendrogram (int or decimal >0): '))
+
+    big_cluster= fcluster(Z, t=t, criterion='distance')
+    print(f'number of arbitrary cluster= {big_cluster.max()}')
+
+    return big_cluster,t
+
+def plot_clust_roi(big_cluster, cellstat, ops):
+
+    ''' Plot location of roi based on cluster result
+    '''
+    print("Plotting positions of rois in each cluster")
+    fig=plt.figure()
+    
+    for i in tqdm(range(1,big_cluster.max()+1)):
+        cluster_cells= cellstat[big_cluster==i]
+        
+        center_row= []
+        center_col = []
+        c=['pink', 'olive', 'cyan','blue', 'orange', 'green', 'red', 'purple', 'brown']
+        
+        for j in cluster_cells:
+            center_row.append( j['med'][0])
+            center_col.append( j['med'][1])
+            
+            plt.imshow(ops['meanImg'], cmap='gray')
+            plt.scatter(center_col, center_row, s= 5, alpha= 0.8, c= c[i-1])
+    plt.title('Clustering based on stimulus significance result')
+    plt.show()
+    return fig
+        

@@ -94,6 +94,27 @@ def parse_stimulus(stimulus, phasetimes):
         
     return cycWindow,cycLength, startFrame, ncycles,stimTimes
 
+def parse_sn(videoframetimes, stimulus):
+
+    ''' parse out stimulus times for sparse noise stimulus
+
+    '''
+
+    cycLength=np.median(np.diff(videoframetimes))/stimulus.dt # number of frames in window around each cycle, min of 4 sec, or actual cycle lengt+2
+    # so this is the number of frames around each stimulus 
+    cycwindow= int(np.round(np.max([2/stimulus.dt, cycLength])))
+    # get the higher value between cycle length (calculated based on 2 seconds), or actual cycle length
+
+    startFrame=int(np.round( (videoframetimes[0]-1)/stimulus.dt)) # movie starts 1 second before first stim
+    stimTimes= videoframetimes-videoframetimes[0]+1
+
+    stimTimes= stimTimes[stimTimes<(stimulus.nframes-startFrame)*stimulus.dt-5] 
+    stimFrames= np.round(stimTimes/stimulus.dt)
+
+    framerange=np.arange(0,1+cycwindow*2)
+
+    return cycwindow, startFrame, stimFrames, framerange
+
 def get_stimorder(stimulus,acquisition, cycLength, ncycles):
     ''' get the order of stimulus from acquicision info and cycle length
     '''
@@ -336,6 +357,31 @@ def response_cluster(cluster_input_responsive):
     col_cluster=False,
     cmap='viridis')
     plt.title('whether each unit is significant to a stimulus or not')
+    plt.show()
+
+    return Z, sns_figure.figure
+
+def response_cluster_sn(ndarray):
+    ''' hierarchical clustering based on response from statistial test
+    '''
+
+    Z = linkage(ndarray, 'ward')
+    plt.figure(1)
+    plt.subplots(figsize=(15, 5))
+    dn = dendrogram(Z)
+    plt.show()
+
+    
+    sns_figure=sns.clustermap(
+    ndarray,
+    figsize=(5,5),
+    method='ward',
+    row_cluster=True,
+    col_cluster=False,
+    cmap='viridis',
+    vmin = 0,
+    vmax= 0.3)
+    plt.title('mean dff during taurange in each frame for each roi')
     plt.show()
 
     return Z, sns_figure.figure

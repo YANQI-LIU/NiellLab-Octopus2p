@@ -1,10 +1,13 @@
 ''' useful functions for analysis of 2p ROIs!
+Includes functions specific to each stimulus
 
 '''
 
 import numpy as np
 import pandas as pd
 from matplotlib import colormaps as cm
+
+import scipy
 
 import seaborn as sns
 
@@ -105,6 +108,23 @@ def gratings_param(acquisition, stimorder):
     # assign line style as indications of spacial frequency- dashed correspond to sf= 0.01, dotted sf=0.16, solid line as full field flash
 
     return stim_detail, color_dict, style_dict
+
+
+def load_snmovie():
+    ''' Load and preprosess sparse noise movie
+    returns modified m (with full field flash removed), m_full (array of original movie) and size_m (array indicating size)
+    '''
+
+    movie= scipy.io.loadmat(r'D:\Anne\Matlab_test\data\octo_sparse_flash_10min.mat') # load movie data
+    m=(movie['moviedata'].astype('float')-127)/128  # convert to float (correspond to double() in matlab),  normalize pixel values 
+    m_full=m.copy() # full version of the movie
+
+    m[movie['sz_mov']==255]=0 # something about removing full field..? copied from matlab code. 
+    #Probably have something to do for calculating STA so full field flashes doesn't compromise the appearance of STA (ie. too bright)
+    sz_m= movie['sz_mov']
+    # movie['sz_mov'] is an array with the same size as movie with value at each pixel indicate size of connected component
+
+    return m, m_full, sz_m
 
 # define useful functions for data-preparation and plotting
 
@@ -257,4 +277,67 @@ def plot_scatter_sig(df,color_dict, axs=None):
     axs.scatter(x=df["positionX"], y=df["positionY"], s=np.abs(df['care_sig_dec_weight'])*500, c=color_dict[0:24], edgecolors='k', marker='v', label='below')
     #plot only significant locations, using circles and size represents the mean responsive weight
 
+    return 
+
+def percentile_sta(resp, sta, percentile, nframes, high=True):
+    ''' calculate mean sta from frames with responses that are above or below x percentile
+    stimulus triggered average, related to sparse noise like stimulus
+    '''
+    if high== True:
+        this_index= np.argwhere(resp[:nframes]>=np.percentile(resp, percentile))
+    else:
+        this_index= np.argwhere(resp[:nframes]<=np.percentile(resp, percentile))
+    # find time points where response is greater than 75% percentile or less than 25% percentile
+    # crop the length to nframe (in this case video timepoints are shorter than recording time points)
+    
+    this_sta= sta[:,:,this_index.flatten()]
+    this_mean_sta= np.mean(this_sta,2)
+    return this_mean_sta 
+
+def find_frame_sz(sz_m, m_full, max_ind, nframes):
+    ''' find frames at a given pixel location of varying size and intensity
+    related to sparse noise like stimulus
+    '''
+    
+    sizes= np.unique(sz_m) # find all unique sizes
+    sizes=sizes[1:] # remove the first value (0)
+    
+    # crop out non-recorded frames from both intensity move and size movie
+    m_full=m_full[:,:,:nframes]
+    sz_m= sz_m[:,:,:nframes]
+    
+    size_frame_on=[] # initialize list to store frames
+    for i in sizes:
+        these_frame= np.where((sz_m[max_ind[0], max_ind[1],:]== i) & (m_full[max_ind[0], max_ind[1],:]== 1) ) # find a given size for ON sitmulus (ie. pixel value in m is 1)
+        size_frame_on.append(these_frame)
+        
+    size_frame_off=[] # initialize list to store frames
+    for i in sizes:
+        these_frame= np.where((sz_m[max_ind[0], max_ind[1],:]== i) & (m_full[max_ind[0], max_ind[1],:]< 0) ) # find a given size for ON sitmulus (ie. pixel value in m is 1)
+        size_frame_off.append(these_frame)
+        
+    return size_frame_on, size_frame_off
+
+def plot_sz_effects(this_cycle, size_frames, axs, intensity ):
+    ''' plot size effects of mean responses across roi
+    each transparent dashed line represents a frame with a given size and intensity
+    solid line represents mean response across frames
+
+    related to sparse noise like stimulus
+    '''
+
+    cmap= ['r','g','b','k']
+    labels= ['2', '4', '8', 'full']
+    
+    for count, item in enumerate(size_frames):
+        # so far not including the full field flash (to be fixed later) 
+        
+        this_size_cycle= this_cycle[item,:,].squeeze()
+        mean_cycresp= np.mean(this_size_cycle,axis=2)
+        # mean across rois, leaving a nframe x frame range array
+        axs.plot(mean_cycresp.T, color= cmap[count], linestyle= '--', linewidth=0.5, alpha= 0.5) # need to plot the transposed array
+        axs.plot(np.mean(mean_cycresp, axis=0),color= cmap[count], label=labels[count])
+        axs.legend()
+        axs.set_title(f'Size effect -  {intensity}')
+    
     return 
