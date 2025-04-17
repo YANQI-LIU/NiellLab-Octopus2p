@@ -240,6 +240,9 @@ def plot_s2proi(cellstat,iscell, ops):
     
     axs = np.reshape(axs, (3,3))
     plt.subplots_adjust(hspace= 0.1,wspace= 0.1)
+
+    plt.show(block=False)
+    plt.pause(0.01)
     return fig, fig2
 
 def norm_fluorescence(F, selected_index):
@@ -346,7 +349,8 @@ def response_cluster(cluster_input_responsive):
     plt.figure(1)
     plt.subplots(figsize=(15, 5))
     dn = dendrogram(Z)
-    plt.show()
+    plt.show(block=False)
+    plt.pause(0.01)
 
     
     sns_figure=sns.clustermap(
@@ -357,7 +361,9 @@ def response_cluster(cluster_input_responsive):
     col_cluster=False,
     cmap='viridis')
     plt.title('whether each unit is significant to a stimulus or not')
-    plt.show()
+
+    plt.show(block=False)
+    plt.pause(0.01)
 
     return Z, sns_figure.figure
 
@@ -415,6 +421,9 @@ def plot_clust_roi(big_cluster, cellstat, ops):
             plt.imshow(ops['meanImg'], cmap='gray')
             plt.scatter(center_col, center_row, s= 5, alpha= 0.8, c= c[i-1])
     plt.title('Clustering based on stimulus significance result')
-    plt.show()
+    
+    plt.show(block=False)
+    plt.pause(0.01)
+
     return fig
         
